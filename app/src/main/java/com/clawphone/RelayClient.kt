@@ -100,7 +100,15 @@ class RelayClient(
                 return
             }
 
-            val action = json.get("action")?.asString ?: return
+            // Support both "action" and "command" keys
+            val action = json.get("action")?.asString
+                ?: json.get("command")?.asString
+                ?: run {
+                    onLog("⚠️ No action/command in message: ${message.take(200)}")
+                    sendError("missing 'action' or 'command' field")
+                    return
+                }
+            onLog("← Received: $action")
             val accessibility = ClawAccessibilityService.instance
 
             val response: Map<String, Any?> = if (accessibility == null && action != "screenshot" && action != "ping") {
