@@ -6,13 +6,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
-import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.view.View
 import android.widget.Button
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -32,7 +34,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtLog: TextView
     private lateinit var editAuthToken: TextInputEditText
     private lateinit var editPort: TextInputEditText
+    private lateinit var editRelayUrl: TextInputEditText
     private lateinit var btnStartStop: Button
+    private lateinit var radioGroupMode: RadioGroup
+    private lateinit var radioLocal: RadioButton
+    private lateinit var radioRelay: RadioButton
+    private lateinit var layoutPort: View
+    private lateinit var layoutRelayUrl: View
 
     private val handler = Handler(Looper.getMainLooper())
     private val logLines = mutableListOf<String>()
@@ -65,12 +73,24 @@ class MainActivity : AppCompatActivity() {
         txtLog = findViewById(R.id.txtLog)
         editAuthToken = findViewById(R.id.editAuthToken)
         editPort = findViewById(R.id.editPort)
+        editRelayUrl = findViewById(R.id.editRelayUrl)
         btnStartStop = findViewById(R.id.btnStartStop)
+        radioGroupMode = findViewById(R.id.radioGroupMode)
+        radioLocal = findViewById(R.id.radioLocal)
+        radioRelay = findViewById(R.id.radioRelay)
+        layoutPort = findViewById(R.id.layoutPort)
+        layoutRelayUrl = findViewById(R.id.layoutRelayUrl)
 
         // Load saved prefs
         val prefs = getSharedPreferences("clawphone", MODE_PRIVATE)
         editAuthToken.setText(prefs.getString("auth_token", "changeme"))
         editPort.setText(prefs.getString("port", "8765"))
+        editRelayUrl.setText(prefs.getString("relay_url", "wss://miki.noriks.com/clawphone-relay/"))
+        val isRelay = prefs.getBoolean("relay_mode", true)
+        if (isRelay) radioRelay.isChecked = true else radioLocal.isChecked = true
+        updateModeUI()
+
+        radioGroupMode.setOnCheckedChangeListener { _, _ -> updateModeUI() }
 
         findViewById<Button>(R.id.btnOpenAccessibility).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -81,7 +101,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnStartStop.setOnClickListener {
-            if (ClawForegroundService.instance?.isRunning == true) {
+            val svc = ClawForegroundService.instance
+            if (svc?.isRunning == true || svc?.relayClient != null) {
                 stopClawService()
             } else {
                 startClawService()
@@ -118,6 +139,12 @@ class MainActivity : AppCompatActivity() {
         updateStatus()
     }
 
+    private fun updateModeUI() {
+        val isRelay = radioRelay.isChecked
+        layoutPort.visibility = if (isRelay) View.GONE else View.VISIBLE
+        layoutRelayUrl.visibility = if (isRelay) View.VISIBLE else View.GONE
+    }
+
     private fun requestScreenCapture() {
         val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         screenCaptureRequest.launch(projectionManager.createScreenCaptureIntent())
@@ -125,12 +152,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun startClawService() {
         val token = editAuthToken.text.toString().ifBlank { "changeme" }
-        val port = editPort.text.toString().toIntOrNull() ?: 8765
+        val isRelay = radioRelay.isChecked
 
         // Save prefs
         getSharedPreferences("clawphone", MODE_PRIVATE).edit()
             .putString("auth_token", token)
-            .putString("port", port.toString())
+            .putString("port", editPort.text.toString())
+            .putString("relay_url", editRelayUrl.text.toString())
+            .putBoolean("relay_mode", isRelay)
             .apply()
 
         if (ClawAccessibilityService.instance == null) {
@@ -140,19 +169,34 @@ class MainActivity : AppCompatActivity() {
 
         if (mediaProjectionResultCode == 0 || mediaProjectionData == null) {
             appendLog("⚠️ Screen capture not granted! Grant permission first.")
-            // Start anyway without screenshot capability
         }
 
-        val intent = Intent(this, ClawForegroundService::class.java).apply {
-            action = ClawForegroundService.ACTION_START
-            putExtra(ClawForegroundService.EXTRA_PORT, port)
-            putExtra(ClawForegroundService.EXTRA_AUTH_TOKEN, token)
-            putExtra(ClawForegroundService.EXTRA_RESULT_CODE, mediaProjectionResultCode)
-            putExtra(ClawForegroundService.EXTRA_RESULT_DATA, mediaProjectionData)
+        if (isRelay) {
+            val relayUrl = editRelayUrl.text.toString().ifBlank {
+                appendLog("⚠️ Relay URL is empty!")
+                return
+            }
+            val intent = Intent(this, ClawForegroundService::class.java).apply {
+                action = ClawForegroundService.ACTION_START_RELAY
+                putExtra(ClawForegroundService.EXTRA_AUTH_TOKEN, token)
+                putExtra(ClawForegroundService.EXTRA_RELAY_URL, relayUrl)
+                putExtra(ClawForegroundService.EXTRA_RESULT_CODE, mediaProjectionResultCode)
+                putExtra(ClawForegroundService.EXTRA_RESULT_DATA, mediaProjectionData)
+            }
+            ContextCompat.startForegroundService(this, intent)
+            appendLog("Connecting to relay: $relayUrl")
+        } else {
+            val port = editPort.text.toString().toIntOrNull() ?: 8765
+            val intent = Intent(this, ClawForegroundService::class.java).apply {
+                action = ClawForegroundService.ACTION_START
+                putExtra(ClawForegroundService.EXTRA_PORT, port)
+                putExtra(ClawForegroundService.EXTRA_AUTH_TOKEN, token)
+                putExtra(ClawForegroundService.EXTRA_RESULT_CODE, mediaProjectionResultCode)
+                putExtra(ClawForegroundService.EXTRA_RESULT_DATA, mediaProjectionData)
+            }
+            ContextCompat.startForegroundService(this, intent)
+            appendLog("Starting local server on port $port...")
         }
-
-        ContextCompat.startForegroundService(this, intent)
-        appendLog("Starting ClawPhone service on port $port...")
     }
 
     private fun stopClawService() {
@@ -173,16 +217,27 @@ class MainActivity : AppCompatActivity() {
             "🟢 Screen Capture: ON" else if (mediaProjectionData != null)
             "🟡 Screen Capture: GRANTED (start server)" else "🔴 Screen Capture: OFF"
 
-        val serverOn = ClawForegroundService.instance?.isRunning == true
-        txtServerStatus.text = if (serverOn)
-            "🟢 WebSocket Server: ON" else "🔴 WebSocket Server: OFF"
+        val svc = ClawForegroundService.instance
+        val serverOn = svc?.isRunning == true
+        val relayConnected = svc?.relayClient?.isConnected == true
 
-        btnStartStop.text = if (serverOn) "Stop Server" else "Start Server"
+        if (svc?.isRelayMode == true) {
+            txtServerStatus.text = if (relayConnected)
+                "🟢 Relay: CONNECTED" else "🟡 Relay: CONNECTING..."
+            txtConnectionCount.text = "Mode: Relay"
+            txtIpAddress.text = editRelayUrl.text.toString()
+        } else if (serverOn) {
+            txtServerStatus.text = "🟢 Local Server: ON"
+            val count = svc?.webSocketServer?.connectionCount ?: 0
+            txtConnectionCount.text = "Connections: $count"
+            txtIpAddress.text = "ws://${getLocalIpAddress()}:${editPort.text}"
+        } else {
+            txtServerStatus.text = "🔴 Not running"
+            txtConnectionCount.text = ""
+            txtIpAddress.text = ""
+        }
 
-        val count = ClawForegroundService.instance?.webSocketServer?.connectionCount ?: 0
-        txtConnectionCount.text = "Connections: $count"
-
-        txtIpAddress.text = "ws://${getLocalIpAddress()}:${editPort.text}"
+        btnStartStop.text = if (serverOn || svc?.relayClient != null) "Stop" else "Start"
     }
 
     private fun getLocalIpAddress(): String {
@@ -200,18 +255,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } catch (e: Exception) { /* ignore */ }
-
-        // Fallback: WiFi
-        try {
-            @Suppress("DEPRECATION")
-            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            @Suppress("DEPRECATION")
-            val ip = wm.connectionInfo.ipAddress
-            if (ip != 0) {
-                return "${ip and 0xFF}.${ip shr 8 and 0xFF}.${ip shr 16 and 0xFF}.${ip shr 24 and 0xFF}"
-            }
-        } catch (e: Exception) { /* ignore */ }
-
         return "unknown"
     }
 

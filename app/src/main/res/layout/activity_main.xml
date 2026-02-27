@@ -24,14 +24,38 @@
             android:text="AI Remote Phone Control"
             android:textSize="14sp"
             android:textColor="#888888"
-            android:layout_marginBottom="24dp" />
+            android:layout_marginBottom="16dp" />
+
+        <!-- Mode selector -->
+        <RadioGroup
+            android:id="@+id/radioGroupMode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="16dp">
+
+            <RadioButton
+                android:id="@+id/radioRelay"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="☁️ Relay (Internet)"
+                android:checked="true" />
+
+            <RadioButton
+                android:id="@+id/radioLocal"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="📡 Local (WiFi)" />
+        </RadioGroup>
 
         <!-- Auth Token -->
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="Auth Token"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="12dp">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/editAuthToken"
@@ -41,12 +65,30 @@
                 android:text="changeme" />
         </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- Port -->
+        <!-- Relay URL (shown in relay mode) -->
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/layoutRelayUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Relay Server URL"
+            android:layout_marginBottom="12dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editRelayUrl"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textUri"
+                android:text="wss://miki.noriks.com/clawphone-relay/" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Port (shown in local mode) -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/layoutPort"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="WebSocket Port"
-            android:layout_marginBottom="24dp">
+            android:visibility="gone"
+            android:layout_marginBottom="12dp">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/editPort"
@@ -63,7 +105,7 @@
             android:orientation="vertical"
             android:background="#1A000000"
             android:padding="16dp"
-            android:layout_marginBottom="24dp">
+            android:layout_marginBottom="16dp">
 
             <TextView
                 android:id="@+id/txtAccessibilityStatus"
@@ -71,7 +113,7 @@
                 android:layout_height="wrap_content"
                 android:text="⚪ Accessibility Service: OFF"
                 android:textSize="14sp"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="6dp" />
 
             <TextView
                 android:id="@+id/txtScreenCaptureStatus"
@@ -79,29 +121,29 @@
                 android:layout_height="wrap_content"
                 android:text="⚪ Screen Capture: OFF"
                 android:textSize="14sp"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="6dp" />
 
             <TextView
                 android:id="@+id/txtServerStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="⚪ WebSocket Server: OFF"
+                android:text="⚪ Not running"
                 android:textSize="14sp"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="6dp" />
 
             <TextView
                 android:id="@+id/txtConnectionCount"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Connections: 0"
+                android:text=""
                 android:textSize="14sp"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="6dp" />
 
             <TextView
                 android:id="@+id/txtIpAddress"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="IP: --"
+                android:text=""
                 android:textSize="14sp"
                 android:textIsSelectable="true" />
         </LinearLayout>
@@ -125,8 +167,9 @@
             android:id="@+id/btnStartStop"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Start Server"
-            android:layout_marginBottom="24dp" />
+            android:text="Start"
+            android:textSize="18sp"
+            android:layout_marginBottom="20dp" />
 
         <!-- Log -->
         <TextView

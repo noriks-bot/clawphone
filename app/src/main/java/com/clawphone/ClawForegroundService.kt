@@ -19,11 +19,13 @@ class ClawForegroundService : Service() {
         private const val NOTIFICATION_ID = 1
 
         const val ACTION_START = "com.clawphone.START"
+        const val ACTION_START_RELAY = "com.clawphone.START_RELAY"
         const val ACTION_STOP = "com.clawphone.STOP"
         const val EXTRA_PORT = "port"
         const val EXTRA_AUTH_TOKEN = "auth_token"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
+        const val EXTRA_RELAY_URL = "relay_url"
 
         var instance: ClawForegroundService? = null
             private set
@@ -36,8 +38,11 @@ class ClawForegroundService : Service() {
         private set
     var screenCaptureManager: ScreenCaptureManager? = null
         private set
+    var relayClient: RelayClient? = null
+        private set
 
-    val isRunning: Boolean get() = webSocketServer != null
+    val isRunning: Boolean get() = webSocketServer != null || relayClient?.isConnected == true
+    val isRelayMode: Boolean get() = relayClient != null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -55,11 +60,20 @@ class ClawForegroundService : Service() {
                 val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
                 val resultData: Intent? = intent.getParcelableExtra(EXTRA_RESULT_DATA)
 
-                startForeground(NOTIFICATION_ID, buildNotification())
+                startForeground(NOTIFICATION_ID, buildNotification("Local server mode"))
                 startServer(port, authToken, resultCode, resultData)
             }
+            ACTION_START_RELAY -> {
+                val authToken = intent.getStringExtra(EXTRA_AUTH_TOKEN) ?: "changeme"
+                val relayUrl = intent.getStringExtra(EXTRA_RELAY_URL) ?: ""
+                val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
+                val resultData: Intent? = intent.getParcelableExtra(EXTRA_RESULT_DATA)
+
+                startForeground(NOTIFICATION_ID, buildNotification("Relay mode"))
+                startRelay(relayUrl, authToken, resultCode, resultData)
+            }
             ACTION_STOP -> {
-                stopServer()
+                stopAll()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -89,9 +103,40 @@ class ClawForegroundService : Service() {
         }
     }
 
-    private fun stopServer() {
+    private fun startRelay(relayUrl: String, authToken: String, resultCode: Int, resultData: Intent?) {
+        try {
+            screenCaptureManager = ScreenCaptureManager(this)
+            if (resultCode != 0 && resultData != null) {
+                screenCaptureManager!!.initialize(resultCode, resultData)
+            }
+
+            relayClient = RelayClient(
+                relayUrl = relayUrl,
+                authToken = authToken,
+                screenCaptureManager = screenCaptureManager!!,
+                onLog = { msg ->
+                    Log.d(TAG, msg)
+                    onLog?.invoke(msg)
+                },
+                onStatusChanged = {
+                    onStatusChanged?.invoke()
+                }
+            )
+            relayClient!!.connect()
+
+            onStatusChanged?.invoke()
+            Log.i(TAG, "ClawPhone relay mode started → $relayUrl")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start relay", e)
+            onLog?.invoke("ERROR: ${e.message}")
+        }
+    }
+
+    private fun stopAll() {
         webSocketServer?.shutdown()
         webSocketServer = null
+        relayClient?.disconnect()
+        relayClient = null
         screenCaptureManager?.release()
         screenCaptureManager = null
         onStatusChanged?.invoke()
@@ -99,7 +144,7 @@ class ClawForegroundService : Service() {
     }
 
     override fun onDestroy() {
-        stopServer()
+        stopAll()
         instance = null
         super.onDestroy()
     }
@@ -116,7 +161,7 @@ class ClawForegroundService : Service() {
         nm.createNotificationChannel(channel)
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(mode: String): Notification {
         val pendingIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
@@ -125,7 +170,7 @@ class ClawForegroundService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("ClawPhone Active")
-            .setContentText("WebSocket server running")
+            .setContentText("$mode running")
             .setSmallIcon(android.R.drawable.ic_menu_manage)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
