@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ClawPhone</string>
+    <string name="accessibility_service_description">ClawPhone accessibility service enables remote gesture control (tap, swipe, scroll, type) for AI agents via WebSocket.</string>
+    <string name="notification_channel_name">ClawPhone Service</string>
+    <string name="notification_channel_description">Foreground service notification for ClawPhone</string>
+</resources>
